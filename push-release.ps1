@@ -122,8 +122,11 @@ if ($doRelease) {
     $notesFile = Join-Path ([IO.Path]::GetTempPath()) "shiftlock_notes_$version.md"
     [IO.File]::WriteAllText($notesFile, $notes, (New-Object Text.UTF8Encoding($false)))
 
+    # gh 는 진행 상황/오류를 stderr 로 출력하므로 Stop 모드에서 예외가 되지 않게 종료 코드로만 판단한다.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
-        gh release view $tagName --repo $repoSlug *> $null
+        gh release view $tagName --repo $repoSlug 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
             Write-Host "릴리스 $tagName 이(가) 이미 있어 건너뜁니다."
         }
@@ -132,7 +135,10 @@ if ($doRelease) {
             if ($LASTEXITCODE -ne 0) { throw "gh release create 실패 (exit $LASTEXITCODE)" }
         }
     }
-    finally { Remove-Item $notesFile -ErrorAction SilentlyContinue }
+    finally {
+        $ErrorActionPreference = $prevEap
+        Remove-Item $notesFile -ErrorAction SilentlyContinue
+    }
 }
 
 Write-Host "`n완료: $Message ($branch)"
