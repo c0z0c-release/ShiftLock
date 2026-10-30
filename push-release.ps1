@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     release\release 에서 가장 최신 ShiftLock_<버전>.exe 의 버전을 읽어 커밋 메시지로 사용합니다.
-    사용법: .\push-release.ps1 [-Message "메시지"] [-Tag] [-Release] [-DryRun]
+    사용법: .\push-release.ps1 [-Message "메시지"] [-Tag] [-NoRelease] [-DryRun]
 
 .PARAMETER Message
     커밋 메시지. 생략하면 최신 exe 의 버전(예: 0.8.1)을 사용합니다.
@@ -12,18 +12,18 @@
 .PARAMETER Tag
     v<버전> 태그를 만들어 함께 push 합니다.
 
-.PARAMETER Release
-    v<버전> 태그를 push 한 뒤 GitHub Releases 에 릴리스를 만들고 exe 를 첨부합니다.
-    릴리스 노트는 README.md 의 '### <버전>' 섹션에서 가져옵니다. (gh CLI 로그인 필요)
+.PARAMETER NoRelease
+    기본 동작은 push 후 v<버전> 태그로 GitHub Releases 에 릴리스를 만들고 exe 를 첨부하는 것입니다.
+    이 옵션을 주면 릴리스 생성을 건너뜁니다. 노트는 README.md 의 '### <버전>' 섹션에서 가져옵니다. (gh CLI 로그인 필요)
 
 .PARAMETER DryRun
-    커밋/push 없이 수행할 내용만 출력합니다.
+    커밋/push/릴리스 없이 수행할 내용과 릴리스 노트 미리보기만 출력합니다.
 #>
 [CmdletBinding()]
 param(
     [string]$Message,
     [switch]$Tag,
-    [switch]$Release,
+    [switch]$NoRelease,
     [switch]$DryRun
 )
 
@@ -74,8 +74,25 @@ else {
     Write-Host "`n커밋할 변경 사항이 없습니다."
 }
 
+# 릴리스 노트: README.md 의 '### <버전>' 섹션 사용
+$tagName = "v$version"
+$doRelease = -not $NoRelease
+if ($doRelease) {
+    $readme = Get-Content (Join-Path $releaseRepo 'README.md') -Raw -Encoding UTF8
+    $m = [regex]::Match($readme, "(?ms)^###\s+$([regex]::Escape($version))[^\r\n]*\r?\n(.*?)(?=^#{2,3}\s|\z)")
+    $changes = if ($m.Success) { $m.Groups[1].Value.Trim() } else { '' }
+    if (-not $changes) { $changes = "ShiftLock $version 릴리스" }
+
+    $notes = "### What's Changed`n`n$changes`n`n---`n" +
+        "> 실행하려면 아래 **Assets** 의 ``$($latest.Name)`` 을 받으세요. " +
+        "``Source code (zip/tar.gz)`` 는 GitHub 이 자동 생성하는 스냅샷이며 실행 파일이 아닙니다."
+}
+
 if ($DryRun) {
-    Write-Host "`n[DryRun] 커밋/push 를 수행하지 않았습니다."
+    if ($doRelease) {
+        Write-Host "`n[DryRun] 릴리스 $tagName 노트 미리보기:`n$notes"
+    }
+    Write-Host "`n[DryRun] 커밋/push/릴리스를 수행하지 않았습니다."
     Invoke-Git reset --quiet
     return
 }
@@ -84,8 +101,7 @@ if ($pending) {
     Invoke-Git commit -m $Message
 }
 
-if ($Tag -or $Release) {
-    $tagName = "v$version"
+if ($Tag -or $doRelease) {
     $existing = git -C $releaseRepo tag --list $tagName
     if ($existing) {
         Write-Host "태그 $tagName 이(가) 이미 있어 건너뜁니다."
@@ -96,24 +112,13 @@ if ($Tag -or $Release) {
 }
 
 Invoke-Git push origin $branch
-if ($Tag -or $Release) { Invoke-Git push origin --tags }
+if ($Tag -or $doRelease) { Invoke-Git push origin --tags }
 
-if ($Release) {
+if ($doRelease) {
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
         throw "GitHub CLI(gh)가 필요합니다: https://cli.github.com/"
     }
-    $tagName = "v$version"
     $repoSlug = ((git -C $releaseRepo remote get-url origin).Trim() -replace '\.git$', '') -replace '^.*github\.com[:/]', ''
-
-    # README.md 의 '### <버전>' 섹션을 릴리스 노트로 사용
-    $readme = Get-Content (Join-Path $releaseRepo 'README.md') -Raw -Encoding UTF8
-    $m = [regex]::Match($readme, "(?ms)^###\s+$([regex]::Escape($version))[^\r\n]*\r?\n(.*?)(?=^#{2,3}\s|\z)")
-    $changes = if ($m.Success) { $m.Groups[1].Value.Trim() } else { '' }
-    if (-not $changes) { $changes = "ShiftLock $version 릴리스" }
-
-    $notes = "### What's Changed`n`n$changes`n`n---`n" +
-        "> 실행하려면 아래 **Assets** 의 ``$($latest.Name)`` 을 받으세요. " +
-        "``Source code (zip/tar.gz)`` 는 GitHub 이 자동 생성하는 스냅샷이며 실행 파일이 아닙니다."
     $notesFile = Join-Path ([IO.Path]::GetTempPath()) "shiftlock_notes_$version.md"
     [IO.File]::WriteAllText($notesFile, $notes, (New-Object Text.UTF8Encoding($false)))
 
