@@ -14,7 +14,7 @@
 
 .PARAMETER NoRelease
     기본 동작은 push 후 v<버전> 태그로 GitHub Releases 에 릴리스를 만들고 exe 를 첨부하는 것입니다.
-    이 옵션을 주면 릴리스 생성을 건너뜁니다. 노트는 README.md 의 '### <버전>' 섹션에서 가져옵니다. (gh CLI 로그인 필요)
+    이 옵션을 주면 릴리스 생성을 건너뜁니다. 노트는 README.md '## 버전 히스토리' 의 '### <버전>' 항목에서 가져옵니다. (gh CLI 로그인 필요)
 
 .PARAMETER DryRun
     커밋/push/릴리스 없이 수행할 내용과 릴리스 노트 미리보기만 출력합니다.
@@ -74,12 +74,15 @@ else {
     Write-Host "`n커밋할 변경 사항이 없습니다."
 }
 
-# 릴리스 노트: README.md 의 '### <버전>' 섹션 사용
+# 릴리스 노트: README.md '## 버전 히스토리' 의 '### <버전>' 항목 사용
 $tagName = "v$version"
 $doRelease = -not $NoRelease
 if ($doRelease) {
     $readme = Get-Content (Join-Path $releaseRepo 'README.md') -Raw -Encoding UTF8
-    $m = [regex]::Match($readme, "(?ms)^###\s+$([regex]::Escape($version))[^\r\n]*\r?\n(.*?)(?=^#{2,3}\s|\z)")
+    # '## 버전 히스토리' 섹션 안에서만 '### <버전>' 항목을 찾는다. (0.8.1 이 0.8.10 과 섞이지 않도록 제목 끝까지 확인)
+    $hist = [regex]::Match($readme, "(?ms)^##\s+버전 히스토리[^\r\n]*\r?\n(.*?)(?=^##\s|\z)")
+    $histBody = if ($hist.Success) { $hist.Groups[1].Value } else { '' }
+    $m = [regex]::Match($histBody, "(?ms)^###\s+v?$([regex]::Escape($version))(?=[ \t(]|\r?$)[^\r\n]*\r?\n(.*?)(?=^###\s|\z)")
     $changes = if ($m.Success) { $m.Groups[1].Value.Trim() } else { '' }
     if (-not $changes) { $changes = "ShiftLock $version 릴리스" }
 
