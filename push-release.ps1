@@ -48,7 +48,7 @@ if (-not (Test-Path (Join-Path $releaseRepo '.git'))) {
 }
 
 $latest = Get-ChildItem $artifactDir -Filter 'ShiftLock_*.exe' -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending |
+    Sort-Object { [version]($_.BaseName -replace '^ShiftLock_', '') } -Descending |
     Select-Object -First 1
 if (-not $latest) {
     throw "배포할 exe가 없습니다. Release 빌드를 먼저 실행하세요: $artifactDir"
